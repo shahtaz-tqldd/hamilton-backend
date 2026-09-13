@@ -1,0 +1,525 @@
+{
+  "info": {
+    "_postman_id": "a041338a-c8d1-4ae1-b659-hamilton-api",
+    "name": "Hamilton API",
+    "description": "Complete API collection for Hamilton's private code snippets, encrypted environment variables, folders, and Cloudflare R2 files.\n\n## Getting started\n1. Import this collection and the `Hamilton API - Local` environment.\n2. Start the backend and select the environment.\n3. Run Register. In development, copy the OTP from the API log into the `otp` environment variable.\n4. Run Verify Email, Login, then List Folders. Login automatically stores both JWTs; List Folders stores the default folder ID.\n5. Set `uploadFilePath` or select a file manually before running Upload File.\n\nAll protected requests inherit Bearer authentication from the collection. Resource creation requests store returned IDs automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "Service health check. Does not require authentication.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Returns HTTP 200 when the FastAPI process is running."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Authentication",
+      "description": "Registration, email verification, password recovery, JWT issuance, and account details.",
+      "auth": { "type": "noauth" },
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"full_name\": \"{{fullName}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/register",
+            "description": "Creates an unverified user, creates their Default folder, and sends a six-digit email verification OTP. When SMTP is not configured, the OTP is printed in the server log."
+          }
+        },
+        {
+          "name": "Verify Email OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"code\": \"{{otp}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/verify-otp",
+            "description": "Consumes the latest email-verification OTP. OTPs expire after ten minutes and allow at most five failed attempts."
+          }
+        },
+        {
+          "name": "Resend Verification OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/resend-verification",
+            "description": "Invalidates older verification codes and sends a new code. The response intentionally does not reveal whether an account exists."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeded', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  pm.environment.set('accessToken', data.access_token);",
+                  "  pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/login",
+            "description": "Authenticates a verified, active user. The test script stores `access_token` and `refresh_token` in the selected environment."
+          }
+        },
+        {
+          "name": "Refresh Tokens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  pm.environment.set('accessToken', data.access_token);",
+                  "  pm.environment.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/refresh",
+            "description": "Exchanges a valid refresh token for a fresh token pair and updates the environment variables."
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/forgot-password",
+            "description": "Sends a password-reset OTP when the account exists. Copy the received value into `otp`."
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"code\": \"{{otp}}\",\n  \"new_password\": \"{{password}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/auth/reset-password",
+            "description": "Consumes a password-reset OTP and sets the supplied password."
+          }
+        },
+        {
+          "name": "Get Current User",
+          "auth": {
+            "type": "bearer",
+            "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/auth/me",
+            "description": "Returns the user represented by the current access token."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Folders",
+      "description": "Flat folders only. A Default folder is created during registration and cannot be deleted.",
+      "item": [
+        {
+          "name": "List Folders",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const folder = pm.response.json().find(item => item.is_default);",
+                  "  if (folder) pm.environment.set('defaultFolderId', folder.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/folders",
+            "description": "Lists the current user's folders and stores the Default folder ID."
+          }
+        },
+        {
+          "name": "Create Folder",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) pm.environment.set('customFolderId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Work Projects\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/folders",
+            "description": "Creates a top-level folder and stores its ID as `customFolderId`. Folder names are unique per user."
+          }
+        },
+        {
+          "name": "Delete Custom Folder",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/folders/{{customFolderId}}",
+            "description": "Deletes a non-default folder and all of its snippets, variables, metadata, and R2 objects. Run this after other custom-folder examples."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Code Snippets",
+      "description": "Create, retrieve, list, update, move, and delete personal code snippets.",
+      "item": [
+        {
+          "name": "Create Snippet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) pm.environment.set('snippetId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder_id\": \"{{defaultFolderId}}\",\n  \"title\": \"FastAPI health endpoint\",\n  \"language\": \"python\",\n  \"content\": \"@app.get('/health')\\nasync def health():\\n    return {'status': 'ok'}\",\n  \"description\": \"Minimal service health check\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/snippets",
+            "description": "Creates a snippet and stores its ID. `folder_id` may be omitted to use the Default folder."
+          }
+        },
+        {
+          "name": "List Snippets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/snippets?folder_id={{defaultFolderId}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "snippets"],
+              "query": [
+                { "key": "folder_id", "value": "{{defaultFolderId}}", "description": "Optional folder filter" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Lists snippets newest-updated first. Remove `folder_id` to list across every folder."
+          }
+        },
+        {
+          "name": "Get Snippet",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/snippets/{{snippetId}}",
+            "description": "Returns one owned snippet including its code content."
+          }
+        },
+        {
+          "name": "Update or Move Snippet",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder_id\": \"{{customFolderId}}\",\n  \"title\": \"Updated FastAPI health endpoint\",\n  \"description\": \"Moved to the custom folder\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/snippets/{{snippetId}}",
+            "description": "Partially updates fields. Supplying `folder_id` moves the snippet to another owned folder."
+          }
+        },
+        {
+          "name": "Delete Snippet",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/snippets/{{snippetId}}",
+            "description": "Permanently deletes an owned snippet."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Environment Variables",
+      "description": "Encrypted secret storage. Values are encrypted at rest and masked in normal create/list/detail responses.",
+      "item": [
+        {
+          "name": "Create Environment Variable",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) pm.environment.set('envVariableId', pm.response.json().id);",
+                  "pm.test('Secret is masked', () => { if (pm.response.code === 201) pm.expect(pm.response.json().value).to.eql('********'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder_id\": \"{{defaultFolderId}}\",\n  \"key\": \"DATABASE_PASSWORD\",\n  \"value\": \"super-secret-value\",\n  \"description\": \"Development database password\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/env-variables",
+            "description": "Encrypts the value with Fernet and stores its ID. Keys must use environment-variable syntax and be unique inside a folder."
+          }
+        },
+        {
+          "name": "List Environment Variables",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/env-variables?folder_id={{defaultFolderId}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "env-variables"],
+              "query": [
+                { "key": "folder_id", "value": "{{defaultFolderId}}", "description": "Optional folder filter" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Lists variable metadata. Every value remains masked."
+          }
+        },
+        {
+          "name": "Get Environment Variable",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}",
+            "description": "Returns one variable with `value` set to `********`."
+          }
+        },
+        {
+          "name": "Reveal Environment Variable",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}/reveal",
+            "description": "Explicitly decrypts and returns the actual value. Only the owning authenticated user can reveal it. Treat this response as sensitive."
+          }
+        },
+        {
+          "name": "Update or Move Environment Variable",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder_id\": \"{{customFolderId}}\",\n  \"value\": \"rotated-secret-value\",\n  \"description\": \"Rotated and moved\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}",
+            "description": "Partially updates or moves a variable. A supplied value is encrypted before storage."
+          }
+        },
+        {
+          "name": "Delete Environment Variable",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}",
+            "description": "Permanently deletes an owned environment variable."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Files",
+      "description": "Cloudflare R2 file uploads and private download URL generation. ZIP files and other file types are accepted up to the configured size limit.",
+      "item": [
+        {
+          "name": "Upload File",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) pm.environment.set('fileId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "upload", "type": "file", "src": "{{uploadFilePath}}", "description": "File body; ZIP files are supported" },
+                { "key": "folder_id", "value": "{{defaultFolderId}}", "type": "text", "description": "Optional; omit to use Default folder" }
+              ]
+            },
+            "url": "{{baseUrl}}/api/v1/files/upload",
+            "description": "Streams a multipart file to Cloudflare R2, stores metadata and SHA-256 checksum, then saves its ID. Do not manually set Content-Type; Postman adds the multipart boundary."
+          }
+        },
+        {
+          "name": "List Files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/files?folder_id={{defaultFolderId}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "files"],
+              "query": [
+                { "key": "folder_id", "value": "{{defaultFolderId}}", "description": "Optional folder filter" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Lists file metadata without exposing internal R2 object keys."
+          }
+        },
+        {
+          "name": "Get File Download URL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/files/{{fileId}}",
+            "description": "Returns metadata and either a time-limited private R2 presigned URL or the configured public URL."
+          }
+        },
+        {
+          "name": "Move File",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"folder_id\": \"{{customFolderId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/api/v1/files/{{fileId}}/folder",
+            "description": "Moves file metadata to another owned folder without copying the R2 object."
+          }
+        },
+        {
+          "name": "Delete File",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/files/{{fileId}}",
+            "description": "Deletes the R2 object first and then removes its PostgreSQL metadata."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Combined Items",
+      "description": "A unified metadata feed across snippets, environment variables, and uploaded files.",
+      "item": [
+        {
+          "name": "List All Item Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/items?folder_id={{defaultFolderId}}&limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "items"],
+              "query": [
+                { "key": "folder_id", "value": "{{defaultFolderId}}", "description": "Optional owned-folder filter" },
+                { "key": "item_type", "value": "snippet", "disabled": true, "description": "Optional: snippet, env_variable, or file" },
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            },
+            "description": "Returns common metadata sorted by latest update. Enable `item_type` to restrict the feed to one type; remove `folder_id` to search all folders. Secret values and snippet contents are intentionally omitted."
+          }
+        }
+      ]
+    }
+  ]
+}
