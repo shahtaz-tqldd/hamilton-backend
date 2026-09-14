@@ -1,12 +1,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db.models import Snippet
 from app.dependencies import CurrentUser, DbSession, owned_folder
 from app.modules.snippets.schemas import SnippetCreate, SnippetResponse, SnippetUpdate
-from app.schemas.common import Message
+from app.schemas.common import Message, PaginatedResponse, PaginationMeta
 
 router = APIRouter(prefix="/snippets", tags=["Code snippets"])
 
@@ -28,20 +28,26 @@ async def create_snippet(body: SnippetCreate, db: DbSession, user: CurrentUser) 
     return item
 
 
-@router.get("", response_model=list[SnippetResponse])
+@router.get("", response_model=PaginatedResponse[SnippetResponse])
 async def list_snippets(
     db: DbSession,
     user: CurrentUser,
     folder_id: UUID | None = None,
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> list[Snippet]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+) -> PaginatedResponse[SnippetResponse]:
     query = select(Snippet).where(Snippet.user_id == user.id)
     if folder_id:
         await owned_folder(db, user, folder_id)
         query = query.where(Snippet.folder_id == folder_id)
-    result = await db.scalars(query.order_by(Snippet.updated_at.desc()).limit(limit).offset(offset))
-    return list(result)
+    count = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
+    result = await db.scalars(
+        query.order_by(Snippet.updated_at.desc()).limit(page_size).offset((page - 1) * page_size)
+    )
+    return PaginatedResponse[SnippetResponse](
+        data=[SnippetResponse.model_validate(item) for item in result],
+        meta=PaginationMeta(count=count, current_page=page, page_size=page_size),
+    )
 
 
 @router.get("/{item_id}", response_model=SnippetResponse)

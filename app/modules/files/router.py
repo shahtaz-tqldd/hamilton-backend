@@ -4,13 +4,13 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.db.models import StoredFile
 from app.dependencies import CurrentUser, DbSession, owned_folder
 from app.modules.files.schemas import FileDownloadResponse, FileMoveRequest, FileResponse
-from app.schemas.common import Message
+from app.schemas.common import Message, PaginatedResponse, PaginationMeta
 from app.services.storage import storage_service
 
 router = APIRouter(prefix="/files", tags=["Files"])
@@ -83,22 +83,26 @@ async def upload_file(
     return item
 
 
-@router.get("", response_model=list[FileResponse])
+@router.get("", response_model=PaginatedResponse[FileResponse])
 async def list_files(
     db: DbSession,
     user: CurrentUser,
     folder_id: UUID | None = None,
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> list[StoredFile]:
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
+) -> PaginatedResponse[FileResponse]:
     query = select(StoredFile).where(StoredFile.user_id == user.id)
     if folder_id:
         await owned_folder(db, user, folder_id)
         query = query.where(StoredFile.folder_id == folder_id)
+    count = await db.scalar(select(func.count()).select_from(query.subquery())) or 0
     result = await db.scalars(
-        query.order_by(StoredFile.updated_at.desc()).limit(limit).offset(offset)
+        query.order_by(StoredFile.updated_at.desc()).limit(page_size).offset((page - 1) * page_size)
     )
-    return list(result)
+    return PaginatedResponse[FileResponse](
+        data=[FileResponse.model_validate(item) for item in result],
+        meta=PaginationMeta(count=count, current_page=page, page_size=page_size),
+    )
 
 
 @router.get("/{item_id}", response_model=FileDownloadResponse)

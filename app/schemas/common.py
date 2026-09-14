@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Generic, TypeVar
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,9 +13,18 @@ class Message(BaseModel):
     message: str
 
 
-class Pagination(BaseModel):
-    limit: int = Field(50, ge=1, le=100)
-    offset: int = Field(0, ge=0)
+class PaginationMeta(BaseModel):
+    count: int = Field(ge=0)
+    current_page: int = Field(ge=1)
+    page_size: int = Field(ge=1)
+
+
+ResponseItem = TypeVar("ResponseItem")
+
+
+class PaginatedResponse(BaseModel, Generic[ResponseItem]):
+    data: list[ResponseItem]
+    meta: PaginationMeta
 
 
 class ItemSummary(ORMModel):

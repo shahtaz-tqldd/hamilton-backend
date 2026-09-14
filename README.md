@@ -69,6 +69,20 @@ All application routes use the `/api/v1` prefix.
 
 Pass the access token as `Authorization: Bearer <token>`. On create endpoints, omit `folder_id` to use the account's default folder. Nested folders are intentionally unsupported.
 
+The folder, snippet, environment-variable, and file list endpoints accept `page` and
+`page_size` and return this structure:
+
+```json
+{
+  "data": [],
+  "meta": {"count": 0, "current_page": 1, "page_size": 20}
+}
+```
+
+`meta.count` is the total number of matching records, not only the number on the current page.
+Folder pages default to 20 records, and every folder includes `total_items`, the combined count
+of its snippets, environment-variable groups, and files.
+
 ### File upload example
 
 ```bash
@@ -81,7 +95,23 @@ The metadata returned by `GET /files/{id}` includes either a time-limited R2 pre
 
 ### Environment variable behavior
 
-Create with `{ "key": "DATABASE_PASSWORD", "value": "secret" }`. List and detail responses contain only `"value": "********"`. Call `POST /env-variables/{id}/reveal` to decrypt the value for its authenticated owner.
+Each environment-variable resource is a named group, such as a complete production environment:
+
+```json
+{
+  "name": "Production",
+  "variables": [
+    {"key": "DATABASE_URL", "value": "postgresql://..."},
+    {"key": "REDIS_URL", "value": "redis://..."}
+  ],
+  "description": "Production service configuration"
+}
+```
+
+Create, list, and detail responses include every key but return `"value": "********"` for
+each value. Call `POST /env-variables/{id}/reveal` to decrypt all values in the group for its
+authenticated owner. In `PATCH /env-variables/{id}`, an included `variables` array atomically
+replaces the group's complete set; omit it to update only the name, description, or folder.
 
 Changing `FERNET_KEY` makes existing encrypted values unreadable. Store it in a secret manager and back it up; never commit `.env`.
 

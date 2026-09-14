@@ -1,5 +1,6 @@
 services:
   api:
+    container_name: hamilton_api
     build:
       context: ..
       dockerfile: docker/Dockerfile

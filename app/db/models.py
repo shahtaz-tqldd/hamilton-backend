@@ -79,7 +79,7 @@ class Snippet(UUIDMixin, TimestampMixin, Base):
 
 class EnvVariable(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "env_variables"
-    __table_args__ = (UniqueConstraint("folder_id", "key", name="uq_env_variables_folder_key"),)
+    __table_args__ = (UniqueConstraint("folder_id", "name", name="uq_env_variables_folder_name"),)
 
     user_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
@@ -87,9 +87,32 @@ class EnvVariable(UUIDMixin, TimestampMixin, Base):
     folder_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), index=True
     )
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entries: Mapped[list["EnvVariableEntry"]] = relationship(
+        back_populates="env_variable",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="EnvVariableEntry.position",
+    )
+
+
+class EnvVariableEntry(UUIDMixin, Base):
+    __tablename__ = "env_variable_entries"
+    __table_args__ = (
+        UniqueConstraint("env_variable_id", "key", name="uq_env_variable_entries_group_key"),
+    )
+
+    env_variable_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("env_variables.id", ondelete="CASCADE"),
+        index=True,
+    )
     key: Mapped[str] = mapped_column(String(255))
     encrypted_value: Mapped[str] = mapped_column(Text)
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position: Mapped[int] = mapped_column(default=0, server_default="0")
+
+    env_variable: Mapped[EnvVariable] = relationship(back_populates="entries")
 
 
 class StoredFile(UUIDMixin, TimestampMixin, Base):

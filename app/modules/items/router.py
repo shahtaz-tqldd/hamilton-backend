@@ -38,7 +38,7 @@ async def list_all_items(
         query = select(
             EnvVariable.id,
             EnvVariable.folder_id,
-            EnvVariable.key.label("name"),
+            EnvVariable.name.label("name"),
             literal("env_variable").label("item_type"),
             EnvVariable.created_at,
             EnvVariable.updated_at,

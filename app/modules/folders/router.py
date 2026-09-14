@@ -1,13 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.db.models import Folder, StoredFile
+from app.db.models import EnvVariable, Folder, Snippet, StoredFile
 from app.dependencies import CurrentUser, DbSession
 from app.modules.folders.schemas import FolderCreate, FolderResponse
-from app.schemas.common import Message
+from app.schemas.common import Message, PaginatedResponse, PaginationMeta
 from app.services.storage import storage_service
 
 router = APIRouter(prefix="/folders", tags=["Folders"])
@@ -28,14 +28,54 @@ async def create_folder(body: FolderCreate, db: DbSession, user: CurrentUser) ->
     return folder
 
 
-@router.get("", response_model=list[FolderResponse])
-async def list_folders(db: DbSession, user: CurrentUser) -> list[Folder]:
-    result = await db.scalars(
-        select(Folder)
+@router.get("", response_model=PaginatedResponse[FolderResponse])
+async def list_folders(
+    db: DbSession,
+    user: CurrentUser,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+) -> PaginatedResponse[FolderResponse]:
+    folder_query = select(Folder).where(Folder.user_id == user.id)
+    count = await db.scalar(select(func.count()).select_from(folder_query.subquery())) or 0
+    snippet_count = (
+        select(func.count(Snippet.id))
+        .where(Snippet.folder_id == Folder.id, Snippet.user_id == user.id)
+        .correlate(Folder)
+        .scalar_subquery()
+    )
+    variable_count = (
+        select(func.count(EnvVariable.id))
+        .where(EnvVariable.folder_id == Folder.id, EnvVariable.user_id == user.id)
+        .correlate(Folder)
+        .scalar_subquery()
+    )
+    file_count = (
+        select(func.count(StoredFile.id))
+        .where(StoredFile.folder_id == Folder.id, StoredFile.user_id == user.id)
+        .correlate(Folder)
+        .scalar_subquery()
+    )
+    rows = await db.execute(
+        select(Folder, (snippet_count + variable_count + file_count).label("total_items"))
         .where(Folder.user_id == user.id)
         .order_by(Folder.is_default.desc(), Folder.name)
+        .limit(page_size)
+        .offset((page - 1) * page_size)
     )
-    return list(result)
+    data = [
+        FolderResponse(
+            id=folder.id,
+            name=folder.name,
+            is_default=folder.is_default,
+            total_items=total_items,
+            created_at=folder.created_at,
+        )
+        for folder, total_items in rows
+    ]
+    return PaginatedResponse[FolderResponse](
+        data=data,
+        meta=PaginationMeta(count=count, current_page=page, page_size=page_size),
+    )
 
 
 @router.delete("/{folder_id}", response_model=Message)

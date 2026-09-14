@@ -191,7 +191,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code === 200) {",
-                  "  const folder = pm.response.json().find(item => item.is_default);",
+                  "  const folder = pm.response.json().data.find(item => item.is_default);",
                   "  if (folder) pm.environment.set('defaultFolderId', folder.id);",
                   "}"
                 ]
@@ -201,8 +201,16 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/api/v1/folders",
-            "description": "Lists the current user's folders and stores the Default folder ID."
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/folders?page=1&page_size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "folders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "20" }
+              ]
+            },
+            "description": "Lists the current user's folders with pagination metadata and each folder's total item count, then stores the Default folder ID."
           }
         },
         {
@@ -276,16 +284,16 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/snippets?folder_id={{defaultFolderId}}&limit=50&offset=0",
+              "raw": "{{baseUrl}}/api/v1/snippets?folder_id={{defaultFolderId}}&page=1&page_size=50",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "snippets"],
               "query": [
                 { "key": "folder_id", "value": "{{defaultFolderId}}", "description": "Optional folder filter" },
-                { "key": "limit", "value": "50" },
-                { "key": "offset", "value": "0" }
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "50" }
               ]
             },
-            "description": "Lists snippets newest-updated first. Remove `folder_id` to list across every folder."
+            "description": "Lists snippets newest-updated first with `data` and pagination `meta`. Remove `folder_id` to list across every folder."
           }
         },
         {
@@ -324,10 +332,10 @@
     },
     {
       "name": "Environment Variables",
-      "description": "Encrypted secret storage. Values are encrypted at rest and masked in normal create/list/detail responses.",
+      "description": "Encrypted environment groups. Each group contains multiple key/value pairs; values are encrypted at rest and masked in normal create/list/detail responses.",
       "item": [
         {
-          "name": "Create Environment Variable",
+          "name": "Create Environment Variable Group",
           "event": [
             {
               "listen": "test",
@@ -335,7 +343,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "if (pm.response.code === 201) pm.environment.set('envVariableId', pm.response.json().id);",
-                  "pm.test('Secret is masked', () => { if (pm.response.code === 201) pm.expect(pm.response.json().value).to.eql('********'); });"
+                  "pm.test('Secrets are masked', () => { if (pm.response.code === 201) pm.response.json().variables.forEach(variable => pm.expect(variable.value).to.eql('********')); });"
                 ]
               }
             }
@@ -345,70 +353,70 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"folder_id\": \"{{defaultFolderId}}\",\n  \"key\": \"DATABASE_PASSWORD\",\n  \"value\": \"super-secret-value\",\n  \"description\": \"Development database password\"\n}",
+              "raw": "{\n  \"folder_id\": \"{{defaultFolderId}}\",\n  \"name\": \"Production\",\n  \"variables\": [\n    { \"key\": \"DATABASE_URL\", \"value\": \"postgresql://production\" },\n    { \"key\": \"DATABASE_PASSWORD\", \"value\": \"super-secret-value\" }\n  ],\n  \"description\": \"Production environment\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/env-variables",
-            "description": "Encrypts the value with Fernet and stores its ID. Keys must use environment-variable syntax and be unique inside a folder."
+            "description": "Creates a named group and encrypts all values with Fernet. The group name must be unique in its folder, and keys must be unique inside the group."
           }
         },
         {
-          "name": "List Environment Variables",
+          "name": "List Environment Variable Groups",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/env-variables?folder_id={{defaultFolderId}}&limit=50&offset=0",
+              "raw": "{{baseUrl}}/api/v1/env-variables?folder_id={{defaultFolderId}}&page=1&page_size=50",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "env-variables"],
               "query": [
                 { "key": "folder_id", "value": "{{defaultFolderId}}", "description": "Optional folder filter" },
-                { "key": "limit", "value": "50" },
-                { "key": "offset", "value": "0" }
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "50" }
               ]
             },
-            "description": "Lists variable metadata. Every value remains masked."
+            "description": "Lists groups and all of their keys with `data` and pagination `meta`. Every value remains masked."
           }
         },
         {
-          "name": "Get Environment Variable",
+          "name": "Get Environment Variable Group",
           "request": {
             "method": "GET",
             "header": [],
             "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}",
-            "description": "Returns one variable with `value` set to `********`."
+            "description": "Returns one group with every variable value set to `********`."
           }
         },
         {
-          "name": "Reveal Environment Variable",
+          "name": "Reveal Environment Variable Group",
           "request": {
             "method": "POST",
             "header": [],
             "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}/reveal",
-            "description": "Explicitly decrypts and returns the actual value. Only the owning authenticated user can reveal it. Treat this response as sensitive."
+            "description": "Explicitly decrypts and returns every value in the group. Only the owning authenticated user can reveal it. Treat this response as sensitive."
           }
         },
         {
-          "name": "Update or Move Environment Variable",
+          "name": "Update or Move Environment Variable Group",
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"folder_id\": \"{{customFolderId}}\",\n  \"value\": \"rotated-secret-value\",\n  \"description\": \"Rotated and moved\"\n}",
+              "raw": "{\n  \"folder_id\": \"{{customFolderId}}\",\n  \"name\": \"Production (rotated)\",\n  \"variables\": [\n    { \"key\": \"DATABASE_URL\", \"value\": \"postgresql://production\" },\n    { \"key\": \"DATABASE_PASSWORD\", \"value\": \"rotated-secret-value\" }\n  ],\n  \"description\": \"Rotated and moved\"\n}",
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}",
-            "description": "Partially updates or moves a variable. A supplied value is encrypted before storage."
+            "description": "Partially updates or moves a group. When supplied, `variables` atomically replaces the complete set and every value is encrypted before storage."
           }
         },
         {
-          "name": "Delete Environment Variable",
+          "name": "Delete Environment Variable Group",
           "request": {
             "method": "DELETE",
             "header": [],
             "url": "{{baseUrl}}/api/v1/env-variables/{{envVariableId}}",
-            "description": "Permanently deletes an owned environment variable."
+            "description": "Permanently deletes an owned environment variable group and all of its entries."
           }
         }
       ]
@@ -450,16 +458,16 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/files?folder_id={{defaultFolderId}}&limit=50&offset=0",
+              "raw": "{{baseUrl}}/api/v1/files?folder_id={{defaultFolderId}}&page=1&page_size=50",
               "host": ["{{baseUrl}}"],
               "path": ["api", "v1", "files"],
               "query": [
                 { "key": "folder_id", "value": "{{defaultFolderId}}", "description": "Optional folder filter" },
-                { "key": "limit", "value": "50" },
-                { "key": "offset", "value": "0" }
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "50" }
               ]
             },
-            "description": "Lists file metadata without exposing internal R2 object keys."
+            "description": "Lists file metadata with `data` and pagination `meta`, without exposing internal R2 object keys."
           }
         },
         {
